@@ -3,11 +3,11 @@ const cors = require('cors');
 require('dotenv').config();
 
 // Import database
-const db = require('./config/database');
+const db = require('./src/config/database');
 
 // Import models để test
-const Tour = require('./models/Tour');
-const User = require('./models/User');
+const Tour = require('./src/models/Tour');
+const User = require('./src/models/User');
 
 const app = express();
 
