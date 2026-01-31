@@ -8,14 +8,14 @@ const pool = mysql.createPool({
      password: process.env.DB_PASSWORD,
      database: process.env.DB_NAME,
      waitForConnections: true, // Chờ khi không có kết nối sẵn có
-     connectionLimit: 10, // Số kết nối tối đa trong pool
+     connectionLimit: 10,
      queueLimit: 0
 });
 
 // Sử dụng promise để dễ làm việc với async/await
 const promisePool = pool.promise();
 
-// Test connection
+// Test kết nối
 pool.getConnection((err, connection) => {
      if (err) {
           console.error('❌ Lỗi kết nối database:', err.message);

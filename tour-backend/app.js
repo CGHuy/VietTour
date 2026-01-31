@@ -1,45 +1,65 @@
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
 require('dotenv').config();
 
-// Import database
-const db = require('./src/config/database');
-
-// Import models để test
-const Tour = require('./src/models/Tour');
-const User = require('./src/models/User');
+// Import middlewares
+const requestLogger = require('./src/middlewares/logger');
+const { errorHandler, notFound } = require('./src/middlewares/errorHandler');
+const rateLimiter = require('./src/middlewares/rateLimiter');
 
 const app = express();
 
-// Middleware
+// ============ GLOBAL MIDDLEWARES ============
 app.use(cors());
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-// Test route
+// Request logger
+app.use(requestLogger);
+
+// Rate limiter (100 requests per 15 minutes)
+app.use('/api', rateLimiter(100, 15 * 60 * 1000));
+
+// Serve static files
+app.use(express.static(path.join(__dirname, '../frontend')));
+
+// ============ API ROUTES ============
+const tourRoutes = require('./src/routes/tourRoutes');
+const authRoutes = require('./src/routes/authRoutes');
+const bookingRoutes = require('./src/routes/bookingRoutes');
+
+app.use('/api/tours', tourRoutes);
+app.use('/api/auth', authRoutes);
+app.use('/api/bookings', bookingRoutes);
+
+// Test API
 app.get('/api/test', (req, res) => {
-  res.json({ message: 'API is working!' });
+  res.json({ 
+    success: true,
+    message: 'API is working!',
+    timestamp: new Date()
+  });
 });
 
-// Test database route
-app.get('/api/test-db', async (req, res) => {
-  try {
-    const tours = await Tour.getAll();
-    res.json({
-      success: true,
-      message: 'Kết nối database thành công!',
-      data: tours
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: 'Lỗi kết nối database',
-      error: error.message
-    });
-  }
+// ============ FRONTEND ROUTES ============
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, '../tour-frontend/pages/index.html'));
 });
 
-// Start server
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`🚀 Server đang chạy trên port ${PORT}`);
+app.get('/tours', (req, res) => {
+  res.sendFile(path.join(__dirname, '../tour-frontend/pages/tours.html'));
 });
+
+app.get('/login', (req, res) => {
+  res.sendFile(path.join(__dirname, '../frontend/pages/login.html'));
+});
+
+// ============ ERROR HANDLERS ============
+// 404 handler - phải đặt sau tất cả routes
+app.use(notFound);
+
+// Error handler - phải đặt cuối cùng
+app.use(errorHandler);
+
+module.exports = app;
