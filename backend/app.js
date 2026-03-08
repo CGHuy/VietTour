@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const fs = require('fs');
 require('dotenv').config();
 
 // Import middlewares
@@ -21,8 +22,7 @@ app.use(requestLogger);
 // Rate limiter (100 requests per 15 minutes)
 app.use('/api', rateLimiter(100, 15 * 60 * 1000));
 
-// Serve static files
-app.use(express.static(path.join(__dirname, '../frontend')));
+const frontendDistPath = path.join(__dirname, '../frontend/dist');
 
 // ============ API ROUTES ============
 const tourRoutes = require('./src/routes/tourRoutes');
@@ -35,25 +35,29 @@ app.use('/api/bookings', bookingRoutes);
 
 // Test API
 app.get('/api/test', (req, res) => {
-  res.json({ 
-    success: true,
-    message: 'API is working!',
-    timestamp: new Date()
-  });
+     res.json({ 
+          success: true,
+          message: 'API is working!',
+          timestamp: new Date()
+     });
 });
 
 // ============ FRONTEND ROUTES ============
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, '../tour-frontend/pages/index.html'));
-});
+if (fs.existsSync(frontendDistPath)) {
+     app.use(express.static(frontendDistPath));
 
-app.get('/tours', (req, res) => {
-  res.sendFile(path.join(__dirname, '../tour-frontend/pages/tours.html'));
-});
-
-app.get('/login', (req, res) => {
-  res.sendFile(path.join(__dirname, '../frontend/pages/login.html'));
-});
+     // SPA fallback for client-side routing
+     app.get(/^\/(?!api).*/, (req, res) => {
+     res.sendFile(path.join(frontendDistPath, 'index.html'));
+     });
+} else {
+     app.get('/', (req, res) => {
+          res.status(503).json({
+               success: false,
+               message: 'Frontend chưa được build. Chạy: cd frontend && npm run build'
+          });
+     });
+}
 
 // ============ ERROR HANDLERS ============
 // 404 handler - phải đặt sau tất cả routes

@@ -1,38 +1,41 @@
 const jwt = require('jsonwebtoken');
 
-// Middleware kiểm tra token
+if (!process.env.JWT_SECRET) {
+  throw new Error('JWT_SECRET chưa được cấu hình trong biến môi trường');
+}
+
+// ================= VERIFY TOKEN =================
 const verifyToken = (req, res, next) => {
   try {
-    // Lấy token từ header
     const authHeader = req.headers.authorization;
-    
-    if (!authHeader) {
+
+    if (!authHeader || typeof authHeader !== 'string') {
       return res.status(401).json({
         success: false,
         message: 'Không tìm thấy token. Vui lòng đăng nhập!'
       });
     }
 
-    // Token format: "Bearer <token>"
-    const token = authHeader.split(' ')[1];
-    
-    if (!token) {
+    const parts = authHeader.split(' ');
+    if (parts.length !== 2 || parts[0] !== 'Bearer') {
       return res.status(401).json({
         success: false,
-        message: 'Token không hợp lệ'
+        message: 'Định dạng token không hợp lệ. Sử dụng: Bearer <token>'
       });
     }
 
-    // Verify token
+    const token = parts[1];
+
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    
-    // Lưu thông tin user vào request
+
+    // ⚠️ QUAN TRỌNG: thêm is_verified
     req.user = {
       id: decoded.id,
       email: decoded.email,
-      role: decoded.role
+      role: decoded.role,
+      is_verified: decoded.is_verified
     };
-    
+
     next();
   } catch (error) {
     if (error.name === 'TokenExpiredError') {
@@ -41,7 +44,7 @@ const verifyToken = (req, res, next) => {
         message: 'Token đã hết hạn. Vui lòng đăng nhập lại!'
       });
     }
-    
+
     return res.status(401).json({
       success: false,
       message: 'Token không hợp lệ'
@@ -49,8 +52,8 @@ const verifyToken = (req, res, next) => {
   }
 };
 
-// Middleware kiểm tra quyền admin
-const isAdmin = (req, res, next) => {
+// ================= REQUIRE VERIFIED =================
+const requireVerified = (req, res, next) => {
   try {
     if (!req.user) {
       return res.status(401).json({
@@ -59,10 +62,10 @@ const isAdmin = (req, res, next) => {
       });
     }
 
-    if (req.user.role !== 'admin') {
+    if (!req.user.is_verified) {
       return res.status(403).json({
         success: false,
-        message: 'Bạn không có quyền truy cập. Chỉ admin mới được phép!'
+        message: 'Vui lòng xác thực email trước khi thực hiện chức năng này!'
       });
     }
 
@@ -70,50 +73,68 @@ const isAdmin = (req, res, next) => {
   } catch (error) {
     return res.status(500).json({
       success: false,
-      message: 'Lỗi kiểm tra quyền admin'
+      message: 'Lỗi khi kiểm tra xác thực email'
     });
   }
 };
 
-// Middleware kiểm tra quyền user (đã đăng nhập)
+// ================= ROLE CHECK =================
+const isAdmin = (req, res, next) => {
+  if (!req.user || !req.user.id) {
+    return res.status(401).json({
+      success: false,
+      message: 'Vui lòng đăng nhập lại!'
+    });
+  }
+
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({
+      success: false,
+      message: 'Chỉ admin mới được phép!'
+    });
+  }
+
+  next();
+};
+
 const isUser = (req, res, next) => {
-  try {
-    if (!req.user) {
-      return res.status(401).json({
-        success: false,
-        message: 'Vui lòng đăng nhập để tiếp tục!'
-      });
-    }
-
-    next();
-  } catch (error) {
-    return res.status(500).json({
+  if (!req.user || !req.user.id) {
+    return res.status(401).json({
       success: false,
-      message: 'Lỗi kiểm tra đăng nhập'
+      message: 'Vui lòng đăng nhập để tiếp tục!'
     });
   }
+
+  next();
 };
 
-// Middleware kiểm tra quyền sở hữu (user chỉ được thao tác với data của mình)
+// ================= OWNER CHECK =================
 const isOwner = (paramName = 'userId') => {
   return (req, res, next) => {
     try {
-      const resourceUserId = req.params[paramName] || req.body[paramName];
-      
-      if (!resourceUserId) {
-        return res.status(400).json({
+      if (!req.user || !req.user.id) {
+        return res.status(401).json({
           success: false,
-          message: 'Thiếu thông tin user ID'
+          message: 'Vui lòng đăng nhập lại!'
         });
       }
 
-      // Admin có thể truy cập mọi resource
+      const resourceUserId =
+        req.params[paramName] || req.body[paramName];
+
+      if (!resourceUserId) {
+        return res.status(400).json({
+          success: false,
+          message: `Thiếu thông tin ${paramName}`
+        });
+      }
+
+      // Admin truy cập mọi thứ
       if (req.user.role === 'admin') {
         return next();
       }
 
-      // User chỉ được truy cập resource của chính họ
-      if (req.user.id !== parseInt(resourceUserId)) {
+      if (parseInt(resourceUserId) !== req.user.id) {
         return res.status(403).json({
           success: false,
           message: 'Bạn không có quyền truy cập tài nguyên này!'
@@ -124,7 +145,7 @@ const isOwner = (paramName = 'userId') => {
     } catch (error) {
       return res.status(500).json({
         success: false,
-        message: 'Lỗi kiểm tra quyền sở hữu'
+        message: 'Lỗi khi kiểm tra quyền sở hữu'
       });
     }
   };
@@ -134,5 +155,6 @@ module.exports = {
   verifyToken,
   isAdmin,
   isUser,
+  requireVerified,
   isOwner
 };

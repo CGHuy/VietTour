@@ -35,8 +35,9 @@ class Tour {
      static async create(tourData) {
           try {
                const { name, description, price, region, duration, image } = tourData;
-               const [result] = await db.query(
-               'INSERT INTO tours (name, description, price, region, duration, image, created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())',
+               const [result] = await db.query(`
+                    INSERT INTO tours (name, description, price, region, duration, image, created_at) 
+                    VALUES (?, ?, ?, ?, ?, ?, NOW())`,
                [name, description, price, region, duration, image]);
                return result.insertId;
           } catch (error) {
@@ -48,9 +49,9 @@ class Tour {
      static async update(id, tourData) {
           try {
                const { name, description, price, region, duration, image } = tourData;
-               const [result] = await db.query(
-               'UPDATE tours SET name = ?, description = ?, price = ?, region = ?, duration = ?, image = ?, updated_at = NOW() WHERE id = ?',
-               [name, description, price, region, duration, image, id]
+               const [result] = await db.query(`
+                    UPDATE tours SET name = ?, description = ?, price = ?, region = ?, duration = ?, image = ?, updated_at = NOW() WHERE id = ?`,
+                    [name, description, price, region, duration, image, id]
                );
                return result.affectedRows > 0;
           } catch (error) {

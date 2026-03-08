@@ -1,4 +1,6 @@
 const User = require('../models/User');
+const Otp = require('../models/Otp');
+const sendMail = require('../utils/mailService').sendVerificationOtpEmail;
 const jwt = require('jsonwebtoken');
 
 // Tạo JWT token
@@ -7,7 +9,8 @@ const generateToken = (user) => {
           {
                id: user.id,
                email: user.email,
-               role: user.role
+               role: user.role,
+               is_verified: user.is_verified
           },
           process.env.JWT_SECRET,
           { expiresIn: '7d' } // Token hết hạn sau 7 ngày
@@ -17,44 +20,72 @@ const generateToken = (user) => {
 // Đăng ký user mới
 exports.register = async (req, res) => {
      try {
-          const { username, email, password } = req.body;
+          const { fullname, phone, email, password } = req.body;
 
-          // Kiểm tra email đã tồn tại chưa
+          // 1️ check mail
           const existingUser = await User.findByEmail(email);
           if (existingUser) {
                return res.status(409).json({
-               success: false,
-               message: 'Email đã được sử dụng!'
+                    success: false,
+                    message: 'Email đã được sử dụng!'
                });
           }
 
-          // Tạo user mới
+          // 2 check phone
+          const existingPhone = await User.findByPhone(phone);
+          if (existingPhone) {
+               return res.status(409).json({
+                    success: false,
+                    message: 'Số điện thoại đã được sử dụng!'
+               });
+          }
+
+          // 3️ tạo user mới (chưa verified)
           const userId = await User.create({
-               username,
+               fullname,
+               phone,
                email,
                password,
-               role: 'user' // Mặc định là user
+               role: 'customer',
+               is_verified: false
           });
 
-          // Lấy thông tin user vừa tạo
           const newUser = await User.findById(userId);
 
-          // Tạo token
+          // 4 tạo OTP
+          const otpCode = Math.floor(100000 + Math.random() * 900000);
+
+          // 5 lưu OTP vào database
+          await Otp.create({
+               userId,
+               email,
+               otp: otpCode,
+               type: 'VERIFY_EMAIL',
+               expiresAt: new Date(Date.now() + 5 * 60 * 1000) // 5 phút
+          });
+
+          // 6 gửi OTP qua email
+          await sendMail({ email, otp: otpCode });
+
+          // 7 tạo lại token
           const token = generateToken(newUser);
 
           res.status(201).json({
                success: true,
-               message: 'Đăng ký thành công!',
+               message: 'Đăng ký thành công! Vui lòng kiểm tra email để xác thực.',
                data: {
-               user: {
-                    id: newUser.id,
-                    username: newUser.username,
-                    email: newUser.email,
-                    role: newUser.role
-               },
-               token
+                    user: {
+                         id: newUser.id,
+                         fullname: newUser.fullname,
+                         phone: newUser.phone,
+                         email: newUser.email,
+                         role: newUser.role,
+                         is_verified: newUser.is_verified
+                    },
+                    token
                }
           });
+
      } catch (error) {
           console.error('Register error:', error);
           res.status(500).json({
@@ -68,14 +99,14 @@ exports.register = async (req, res) => {
 // Đăng nhập
 exports.login = async (req, res) => {
      try {
-          const { email, password } = req.body;
+          const {username, password } = req.body;
 
-          // Tìm user theo email
-          const user = await User.findByEmail(email);
+          // Tìm user theo email hoặc số điện thoại
+          const user = await User.findByEmailOrPhone(username);
           if (!user) {
                return res.status(401).json({
                success: false,
-               message: 'Email hoặc mật khẩu không đúng!'
+               message: 'Email hoặc số điện thoại không đúng!'
                });
           }
 
@@ -84,7 +115,7 @@ exports.login = async (req, res) => {
           if (!isPasswordValid) {
                return res.status(401).json({
                success: false,
-               message: 'Email hoặc mật khẩu không đúng!'
+               message: 'Mật khẩu không đúng!'
                });
           }
 
@@ -93,11 +124,12 @@ exports.login = async (req, res) => {
 
           res.json({
                success: true,
-               message: 'Đăng nhập thành công!',
+               message: 'Đăng nhập thành công! Đang chuyển hướng...',
                data: {
                user: {
                     id: user.id,
-                    username: user.username,
+                    fullname: user.fullname,
+                    phone: user.phone,
                     email: user.email,
                     role: user.role
                },
@@ -131,7 +163,8 @@ exports.getProfile = async (req, res) => {
                success: true,
                data: {
                id: user.id,
-               username: user.username,
+               fullname: user.fullname,
+               phone: user.phone,
                email: user.email,
                role: user.role,
                created_at: user.created_at
@@ -150,23 +183,24 @@ exports.getProfile = async (req, res) => {
 // Cập nhật profile
 exports.updateProfile = async (req, res) => {
      try {
-          const { username, email } = req.body;
+          const { fullname, phone, email } = req.body;
           const userId = req.user.id;
 
           // Kiểm tra email mới có bị trùng không (nếu thay đổi email)
           if (email && email !== req.user.email) {
                const existingUser = await User.findByEmail(email);
                if (existingUser && existingUser.id !== userId) {
-               return res.status(409).json({
-                    success: false,
-                    message: 'Email đã được sử dụng bởi user khác!'
-               });
+                    return res.status(409).json({
+                         success: false,
+                         message: 'Email đã được sử dụng bởi user khác!'
+                    });
                }
           }
 
           // Cập nhật thông tin
           const updated = await User.update(userId, {
-               username: username || req.user.username,
+               fullname: fullname || req.user.fullname,
+               phone: phone || req.user.phone,
                email: email || req.user.email,
                role: req.user.role // Giữ nguyên role
           });
@@ -186,7 +220,8 @@ exports.updateProfile = async (req, res) => {
                message: 'Cập nhật profile thành công!',
                data: {
                id: updatedUser.id,
-               username: updatedUser.username,
+               fullname: updatedUser.fullname,
+               phone: updatedUser.phone,
                email: updatedUser.email,
                role: updatedUser.role
                }

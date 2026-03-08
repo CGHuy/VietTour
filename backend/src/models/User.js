@@ -4,40 +4,43 @@ const bcrypt = require('bcryptjs');
 class User {
      // Tìm user theo email
      static async findByEmail(email) {
-          try {
-               const [rows] = await db.query('SELECT * FROM users WHERE email = ?', [email]);
-               return rows[0];
-          } catch (error) {
-               throw error;
-          }
+          const [rows] = await db.query('SELECT * FROM users WHERE email = ?', [email]);
+          return rows[0];
+     }
+
+     // Tìm user theo số điện thoại
+     static async findByPhone(phone) {
+          const [rows] = await db.query('SELECT * FROM users WHERE phone = ?', [phone]);
+          return rows[0];
+     }
+
+     // Tìm user theo email hoặc số điện thoại (dùng cho login)
+     static async findByEmailOrPhone(value) {
+          const [rows] = await db.query(
+               'SELECT * FROM users WHERE email = ? OR phone = ?',
+               [value, value]
+          );
+          return rows[0];
      }
 
      // Tìm user theo ID
      static async findById(id) {
-          try {
-               const [rows] = await db.query('SELECT id, username, email, role, created_at FROM users WHERE id = ?', [id]);
-               return rows[0];
-          } catch (error) {
-               throw error;
-          }
+          const [rows] = await db.query(
+               'SELECT id, fullname, phone, email, role, is_verified, created_at FROM users WHERE id = ?',
+               [id]
+          );
+          return rows[0];
      }
 
      // Tạo user mới
      static async create(userData) {
-          try {
-               const { username, email, password, role = 'user' } = userData;
-               
-               // Hash password
-               const hashedPassword = await bcrypt.hash(password, 10);
-               
-               const [result] = await db.query(
-               'INSERT INTO users (username, email, password, role, created_at) VALUES (?, ?, ?, ?, NOW())',
-               [username, email, hashedPassword, role]);
-               
-               return result.insertId;
-          } catch (error) {
-               throw error;
-          }
+          const { fullname, phone, email, password, role = 'customer', is_verified = false } = userData;
+          const hashedPassword = await bcrypt.hash(password, 10);
+          const [result] = await db.query(
+               'INSERT INTO users (fullname, phone, email, password, role, is_verified, created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())',
+               [fullname, phone, email, hashedPassword, role, is_verified ? 1 : 0]
+          );
+          return result.insertId;
      }
 
      // Xác thực password
@@ -45,36 +48,47 @@ class User {
           return await bcrypt.compare(plainPassword, hashedPassword);
      }
 
-     // Lấy tất cả users (cho admin)
-     static async getAll() {
-          try {
-               const [rows] = await db.query('SELECT id, username, email, role, created_at FROM users ORDER BY id DESC');
-               return rows;
-          } catch (error) {
-               throw error;
-          }
+     // Cập nhật thông tin user
+     static async update(id, userData) {
+          const { fullname, phone, email, role } = userData;
+          const [result] = await db.query(
+               'UPDATE users SET fullname = ?, phone = ?, email = ?, role = ? WHERE id = ?',
+               [fullname, phone, email, role, id]
+          );
+          return result.affectedRows > 0;
      }
 
-     // Cập nhật user
-     static async update(id, userData) {
-          try {
-               const { username, email, role } = userData;
-               const [result] = await db.query('UPDATE users SET username = ?, email = ?, role = ? WHERE id = ?',
-               [username, email, role, id]);
-               return result.affectedRows > 0;
-          } catch (error) {
-               throw error;
-          }
+     // Đổi mật khẩu
+     static async updatePassword(id, newPassword) {
+          const hashedPassword = await bcrypt.hash(newPassword, 10);
+          const [result] = await db.query(
+               'UPDATE users SET password = ? WHERE id = ?',
+               [hashedPassword, id]
+          );
+          return result.affectedRows > 0;
+     }
+
+     // Xác thực email
+     static async verifyEmail(id) {
+          const [result] = await db.query(
+               'UPDATE users SET is_verified = 1 WHERE id = ?',
+               [id]
+          );
+          return result.affectedRows > 0;
+     }
+
+     // Lấy tất cả users (cho admin)
+     static async getAll() {
+          const [rows] = await db.query(
+               'SELECT id, fullname, phone, email, role, is_verified, created_at FROM users ORDER BY id DESC'
+          );
+          return rows;
      }
 
      // Xóa user
      static async delete(id) {
-          try {
-               const [result] = await db.query('DELETE FROM users WHERE id = ?', [id]);
-               return result.affectedRows > 0;
-          } catch (error) {
-               throw error;
-          }
+          const [result] = await db.query('DELETE FROM users WHERE id = ?', [id]);
+          return result.affectedRows > 0;
      }
 }
 

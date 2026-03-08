@@ -1,22 +1,35 @@
-// Middleware log requests
-const requestLogger = (req, res, next) => {
-  const timestamp = new Date().toISOString();
-  const method = req.method;
-  const url = req.url;
-  const ip = req.ip || req.socket?.remoteAddress || 'unknown';
+// Rate limiter đơn giản dùng in-memory Map
+const rateLimiter = (maxRequests, windowMs) => {
+  const clients = new Map();
 
-  console.log(`[${timestamp}] ${method} ${url} - IP: ${ip}`);
+  return (req, res, next) => {
+    const key = req.ip || req.socket?.remoteAddress || 'unknown';
+    const now = Date.now();
 
-  // Log response time
-  const start = Date.now();
-  res.on('finish', () => {
-    const duration = Date.now() - start;
-    const status = res.statusCode;
-    const statusColor = status >= 500 ? '\x1b[31m' : status >= 400 ? '\x1b[33m' : '\x1b[32m';
-    console.log(`${statusColor}${status}\x1b[0m ${method} ${url} - ${duration}ms`);
-  });
+    if (!clients.has(key)) {
+      clients.set(key, { count: 1, start: now });
+      return next();
+    }
 
-  next();
+    const client = clients.get(key);
+
+    // Reset nếu đã hết thời gian window
+    if (now - client.start > windowMs) {
+      clients.set(key, { count: 1, start: now });
+      return next();
+    }
+
+    client.count++;
+
+    if (client.count > maxRequests) {
+      return res.status(429).json({
+        success: false,
+        message: 'Quá nhiều yêu cầu. Vui lòng thử lại sau.'
+      });
+    }
+
+    next();
+  };
 };
 
-module.exports = requestLogger;
+module.exports = rateLimiter;
